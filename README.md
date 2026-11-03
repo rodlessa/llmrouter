@@ -227,6 +227,57 @@ Provider (merge no `~/.openclaw/openclaw.json`):
 > `router/local` declara 32k de contexto. O router escala para a API acima de
 > ~60% da janela local, então nunca estoura o `-c` do llama-server.
 
+## Hermes
+
+O Hermes Agent também fala `/v1/chat/completions`, então o router entra como
+**named custom provider** em `~/.hermes/config.yaml`.
+
+> O id **não pode ser `router`**: o Hermes já tem um provider embutido com esse
+> nome (Ramp Router, que exige `ROUTER_API_KEY`). Use `llmrouter`.
+
+```bash
+hermes config set providers.llmrouter.api http://127.0.0.1:4000/v1
+hermes config set providers.llmrouter.name "LLM Router (local/API)"
+hermes config set providers.llmrouter.transport chat_completions
+hermes config set providers.llmrouter.default_model auto
+hermes config set providers.llmrouter.request_timeout_seconds 600
+hermes config set providers.llmrouter.session_affinity_header x-session-id
+hermes config set providers.llmrouter.models.auto.context_length 1000000
+hermes config set providers.llmrouter.models.local.context_length 65536
+hermes config set providers.llmrouter.models.api.context_length 1000000
+```
+
+`session_affinity_header` faz o Hermes mandar `x-session-id` (um dos headers que o
+router já aceita), então o aviso de mudança de rota é por conversa em vez de
+"global". O provider é resolvido pela entrada `providers.llmrouter.api`; **não**
+configure `model.base_url`, isso duplica a URL e faz a sessão se apresentar como
+`custom`.
+
+Para usar como padrão (e ter uma saída se o router estiver fora do ar):
+
+```bash
+hermes config set model.provider llmrouter
+hermes config set model.default auto
+hermes config set fallback_providers '[{"provider":"deepseek","model":"deepseek-flash"}]'
+```
+
+Troca de rota por sessão: `hermes chat -m local` (força local), `-m api`
+(força API) ou `-m auto`; `--provider llmrouter` garante que a sessão passa
+pelo router.
+
+Notas específicas do Hermes:
+
+- `local` declara **65536** de contexto — o mínimo de 64k que o Hermes aceita
+  para usar tools. O router escala para a API acima de 60% de `LOCAL_CTX`, então
+  isso fica bem abaixo do que estoura o `-c` do llama-server.
+- Todo request do agente carrega ~12k tokens de system prompt + ~20 schemas de
+  tool. Cabe no local, mas **qualquer loop de tool** (role `tool` na conversa)
+  vai para a API pela regra 1 de `decide()`.
+- Se a VRAM livre estiver abaixo de `LOCAL_MIN_FREE_VRAM_MIB` (jogo aberto),
+  até `-m local` cai na API: é a guarda de VRAM funcionando, não um bug.
+- Hermes sempre manda tools, então com `FOOTER_REQUIRE_TOOLS=1` o rodapé ASCII
+  aparece em toda resposta do agente. `FOOTER=0` no `router.env` desliga.
+
 ## Configuração (`router.env`)
 
 | Variável | Padrão | O que faz |
@@ -373,3 +424,5 @@ DONE`), fallback local->API, fast-fail sem `systemctl` e degradação do
 | `local indisponivel (VRAM insuficiente)` | outro processo (jogo) está com a GPU |
 | 502 em tudo | `API_KEY`/`API_BASE_URL` errados |
 | Primeiro request demora ~4 s | cold start do llama-server (normal) |
+| Hermes: `No usable credentials ... ROUTER_API_KEY` | o id `router` do provider colide com o Ramp Router embutido do Hermes; use `llmrouter` |
+| Hermes: a sessão se apresenta como provider `custom` | sobrou `model.base_url` na config; remova, o provider resolve pela entrada `providers.llmrouter.api` |
