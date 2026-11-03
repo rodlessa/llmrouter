@@ -1,0 +1,14 @@
+[Unit]
+Description=LLM router (local llama.cpp / cloud API)
+After=network-online.target llama-local.service
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+EnvironmentFile=@REPO@/router.env
+ExecStart=@REPO@/.venv/bin/uvicorn llmrouter:app --host 127.0.0.1 --port 4000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

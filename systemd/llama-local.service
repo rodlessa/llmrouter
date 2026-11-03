@@ -1,0 +1,17 @@
+[Unit]
+Description=llama.cpp local model for llmrouter
+After=network-online.target
+PartOf=openclaw-gateway.service
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=@REPO@/run-local.sh
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=90
+KillMode=mixed
+
+[Install]
+WantedBy=default.target
