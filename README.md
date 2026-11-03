@@ -30,6 +30,59 @@ cliente |     llmrouter     |                       |  :8080  GPU+CPU/RAM  |
 - Corrige o `gzip` do upstream (`aiter_bytes`), aceita ids de modelo sem prefixo e
   não vaza o `content-encoding`.
 
+## Começando do zero (para a próxima máquina)
+
+```bash
+git clone git@github.com:rodlessa/llmrouter.git ~/ai/router
+cd ~/ai/router
+./install.sh                 # venv (uv) + router.env/local.env + units systemd
+$EDITOR router.env           # API_KEY, API_BASE_URL, API_MODEL
+$EDITOR local.env            # LLAMA_SERVER (binário) e MODEL_PATH (.gguf)
+systemctl --user restart llmrouter
+./tests/run.sh               # 33 checagens em container (podman/docker)
+```
+
+Depois aponte o cliente para `http://127.0.0.1:4000/v1` (seção **OpenClaw**).
+
+### Checklist: está funcionando?
+
+```bash
+systemctl --user is-active llmrouter          # -> active
+curl -s localhost:4000/v1/models              # -> router/auto, router/local, router/api
+curl -s localhost:4000/local/status           # -> "ativo": true depois do 1o request local
+curl -s -X POST localhost:4000/route/explain \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"auto","messages":[{"role":"user","content":"oi"}]}'
+```
+
+Se o `/route/explain` diz `destino: local` para uma pergunta curta e `destino: api`
+para algo com "refatorar"/"arquitetura", o roteamento está de pé.
+
+### Comandos do dia a dia
+
+| Quero | Comando |
+|---|---|
+| ver o estado do modelo local | `curl -s localhost:4000/local/status` |
+| liberar VRAM agora (jogo) | `systemctl --user stop llama-local` |
+| pré-carregar o modelo | `systemctl --user start llama-local` |
+| ver a decisão de rota de um prompt | `curl -s -X POST localhost:4000/route/explain -H 'Content-Type: application/json' -d '{...}'` |
+| acompanhar o router | `journalctl --user -u llmrouter -f` |
+| acompanhar o modelo | `journalctl --user -u llama-local -f` |
+| rodar a suíte de testes | `./tests/run.sh` |
+| aplicar mudança de env | `systemctl --user restart llmrouter` |
+
+### Onde cada coisa mora
+
+| Arquivo | Papel |
+|---|---|
+| `router.env` | API key + limites + Laya (nunca versionado) |
+| `local.env` | caminho do binário `llama-server` e do `.gguf` |
+| `llmrouter.py` | o proxy e as decisões de rota |
+| `run-local.sh` | wrapper que sobe o llama-server lendo `local.env` |
+| `systemd/` | units instaladas em `~/.config/systemd/user` |
+| `bench/` | mede modelos GGUF para escolher o local |
+| `tests/` | suíte de validação em container |
+
 ## Requisitos
 
 - Linux com systemd `--user` (testado em Arch, AMD RX 9070 XT + Vulkan).
@@ -37,27 +90,21 @@ cliente |     llmrouter     |                       |  :8080  GPU+CPU/RAM  |
 - `llama.cpp` compilado (binário `llama-server`) e um `.gguf`.
 - [`rocm-smi`](https://rocm.docs.amd.com/) para a leitura de VRAM (opcional; sem ele a guarda é desativada).
 
-## Instalação
+## Instalação (detalhes)
+
+O caminho rápido está em **Começando do zero**. Variações:
 
 ```bash
-git clone <repo> ~/ai/router
-cd ~/ai/router
-./install.sh              # venv + envs + units
-./install.sh --with-laya  # + decisor local (torch CPU + laya, ~1.7 GB)
+./install.sh --with-laya     # + decisor local (torch CPU + laya, ~1.7 GB)
+./install.sh --no-systemd    # só venv + envs, sem units
+./install.sh --force         # sobrescreve units existentes (guarda .bak)
 ```
 
-Depois edite:
+O `install.sh` nunca sobrescreve `router.env`/`local.env` existentes e degrada com
+aviso quando não há `systemctl --user` (container, WSL sem systemd).
 
-- `router.env` — `API_KEY`, `API_BASE_URL`, `API_MODEL` (nunca commite este arquivo)
-- `local.env` — `LLAMA_SERVER` e `MODEL_PATH` do seu `.gguf`
-
-```bash
-systemctl --user restart llmrouter
-curl -s http://127.0.0.1:4000/local/status
-```
-
-Se o `llama-server` estiver em outro caminho, ajuste `LLAMA_SERVER` no `local.env`;
-a unit já usa `${LLAMA_SERVER}` em vez de caminho fixo.
+Se o `llama-server` estiver em outro caminho, ajuste `LLAMA_SERVER` no `local.env`
+(o `run-local.sh` lê esse arquivo e faz `exec` no binário).
 
 ### Modelo local sugerido
 
