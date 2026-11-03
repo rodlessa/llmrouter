@@ -173,9 +173,12 @@ modelo exigiria parar/religar o llama-server (4-10 s) para piorar a resposta.
 | **65536** | **13.71 GiB** | ok | **162 tok/s** |
 | 131072 | 14.86 GiB | ok | 131 tok/s |
 
-O KV cache do gpt-oss e barato: dobrar de 32k para 64k custa ~0.8 GiB. O padrao
-do repo passou a ser **65536** (`CTX` no local.env e `LOCAL_CTX` no router.env).
-131072 funciona, mas deixa ~1 GiB livre na GPU — so use com a maquina so para isso.
+O KV cache do gpt-oss e barato: dobrar de 32k para 64k custa ~0.8 GiB. O exemplo do
+repo usa **65536** (`CTX` no local.env e `LOCAL_CTX` no router.env), que deixa ~2 GiB
+de folga. **131072** funciona e foi validado (agulha em 13.4k tok, 138 tok/s), mas
+ocupa 14.84 GiB e deixa ~1 GiB livre — so use com a maquina dedicada, e suba o
+`LOCAL_MIN_FREE_VRAM_MIB` para ~14000 junto, senao o router tenta carregar sem
+VRAM para isso.
 
 ## OpenClaw
 
@@ -232,12 +235,12 @@ Provider (merge no `~/.openclaw/openclaw.json`):
 | `API_MODEL` | `deepseek-v4-flash` | modelo de **execução** (tool loops, código, respostas curtas) |
 | `API_MODEL_THINK` | vazio | modelo de **pensamento** (planejamento, arquitetura, review). Vazio = sem divisão |
 | `LOCAL_BASE_URL` | `http://127.0.0.1:8080/v1` | llama-server |
-| `LOCAL_CTX` | `32768` | igual ao `-c` do llama-server |
+| `LOCAL_CTX` | `65536` | igual ao `-c` do llama-server (o limite util e 60% disso) |
 | `LOCAL_TOOL_ALLOWLIST` | `*` | `*` libera todas; lista separa por vírgula |
 | `LOCAL_SERVICE` | `llama-local.service` | unit do systemd |
 | `LOCAL_AUTOSTART` | `1` | subir sob demanda |
 | `LOCAL_IDLE_STOP_SECONDS` | `180` | 0 = nunca parar |
-| `LOCAL_MIN_FREE_VRAM_MIB` | `13500` | abaixo disso, vai para a API |
+| `LOCAL_MIN_FREE_VRAM_MIB` | `13500` | abaixo disso, vai para a API (use ~14000 com ctx 131072) |
 | `FOOTER` | `1` | rodapé de rota |
 | `FOOTER_REQUIRE_TOOLS` | `1` | só em requests com tools |
 | `LAYA_MODE` | `advise` | `off` / `advise` / `decide` |
