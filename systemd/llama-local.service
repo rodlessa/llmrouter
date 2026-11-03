@@ -1,7 +1,9 @@
 [Unit]
 Description=llama.cpp local model for llmrouter
 After=network-online.target
-PartOf=openclaw-gateway.service
+# Descarrega o modelo quando o gateway do cliente para. Os dois nomes sao
+# aceitos: a unit que nao existir no host e ignorada pelo systemd.
+PartOf=openclaw-gateway.service hermes-gateway.service
 StartLimitIntervalSec=300
 StartLimitBurst=3
 
