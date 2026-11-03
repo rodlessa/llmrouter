@@ -91,7 +91,7 @@ echo "$B1" | grep -q "ROTA: LOCAL (llama.cpp)" && ok "local: rodape LOCAL" || { 
 echo "$B1" | grep -q "tok/s" && ok "local: tok/s do timings" || no "tok/s"
 B2=$(post "{\"model\":\"api\",\"messages\":[{\"role\":\"user\",\"content\":\"Diga oi\"}],\"tools\":$TOOLS}")
 echo "$B2" | grep -q "resposta da api" && ok "api: conteudo" || no "api conteudo"
-echo "$B2" | grep -q "ROTA: API (mock-api)" && ok "api: rodape API" || no "rodape api"
+echo "$B2" | grep -q "ROTA: API (mock-fast)" && ok "api: rodape API" || no "rodape api"
 
 echo "== gzip do upstream"
 G=$(curl -s -H 'Accept-Encoding: gzip' -X POST localhost:4000/v1/chat/completions \

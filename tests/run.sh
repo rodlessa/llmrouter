@@ -6,7 +6,10 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 
 if [ -n "$(git -C "$REPO" status --porcelain)" ]; then
-  echo "AVISO: ha mudancas nao commitadas; o teste usa o ultimo commit"
+  echo "ERRO: ha mudancas nao commitadas. O teste clona o ultimo COMMIT," >&2
+  echo "      entao ele nao veria o que esta no working tree." >&2
+  echo "      Commite antes (ou rode com --dirty para testar o commit atual)." >&2
+  [ "${1:-}" = "--dirty" ] || exit 1
 fi
 
 git -C "$REPO" bundle create "$HERE/.router.bundle" --all >/dev/null
