@@ -228,7 +228,9 @@ Provider (merge no `~/.openclaw/openclaw.json`):
 
 | Variável | Padrão | O que faz |
 |---|---|---|
-| `API_BASE_URL` / `API_KEY` / `API_MODEL` | — | upstream OpenAI-compatível |
+| `API_BASE_URL` / `API_KEY` | — | upstream OpenAI-compatível |
+| `API_MODEL` | `deepseek-v4-flash` | modelo de **execução** (tool loops, código, respostas curtas) |
+| `API_MODEL_THINK` | vazio | modelo de **pensamento** (planejamento, arquitetura, review). Vazio = sem divisão |
 | `LOCAL_BASE_URL` | `http://127.0.0.1:8080/v1` | llama-server |
 | `LOCAL_CTX` | `32768` | igual ao `-c` do llama-server |
 | `LOCAL_TOOL_ALLOWLIST` | `*` | `*` libera todas; lista separa por vírgula |
@@ -240,6 +242,27 @@ Provider (merge no `~/.openclaw/openclaw.json`):
 | `FOOTER_REQUIRE_TOOLS` | `1` | só em requests com tools |
 | `LAYA_MODE` | `advise` | `off` / `advise` / `decide` |
 | `ROUTER_DEBUG` | `1` | loga decisão, tools e tokens estimados |
+
+## Pensamento x execução (API)
+
+Quando `API_MODEL_THINK` está setado, o router escolhe o modelo da API por request:
+
+| sinal | modelo | exemplo |
+|---|---|---|
+| loop de tools em andamento (role `tool` ou `tool_calls`) | execução | continuar depois de um `read` |
+| planejamento, arquitetura, design, trade-offs, review, análise, boas práticas, refatoração | **pensamento** | "planeje a arquitetura de um serviço de filas" |
+| resto | execução | "diga apenas: ok", escrever uma função |
+
+Config em uso: `API_MODEL=deepseek-v4-flash`, `API_MODEL_THINK=deepseek-v4-pro`.
+A escolha aparece no rodapé (`ROTA: API (deepseek-v4-pro)`) e no log
+(`-> api (...; deepseek-v4-pro (pensamento))`).
+
+Detalhe de custo: o pro é ~12x o preço do flash, então a divisão só compensa
+porque a maioria dos requests é execução. O `max_tokens` precisa ser folgado
+(>= 2000) com o pro: ele gasta raciocínio antes de escrever a resposta.
+
+A tabela de custo do provider no OpenClaw mostra o preço de um modelo só; com a
+divisão ligada, o custo real de `router/api` é uma mistura dos dois.
 
 ## Rodapé de rota
 
