@@ -1,0 +1,254 @@
+{
+  "_comment": "Suite agnostica de benchmark. Edite models/tasks e rode: python3 run_suite.py --suite suite.json",
+  "defaults": {
+    "runs": 2,
+    "temp": 0.2,
+    "max_tokens": 3000,
+    "timeout": 300,
+    "ctx": 32768,
+    "port": 8099
+  },
+  "models": [
+    {
+      "name": "gpt-oss-20b-Q4XL",
+      "hf_repo": "unsloth/gpt-oss-20b-GGUF",
+      "hf_file": "gpt-oss-20b-UD-Q4_K_XL.gguf",
+      "notes": "MoE 20B, ~180 tok/s"
+    },
+    {
+      "name": "gemma-4-12b-Q4XL",
+      "hf_repo": "unsloth/gemma-4-12b-it-GGUF",
+      "hf_file": "gemma-4-12b-it-UD-Q4_K_XL.gguf",
+      "notes": "12B, ~62 tok/s"
+    },
+    {
+      "name": "qwen3.5-9b-Q4XL",
+      "hf_repo": "unsloth/Qwen3.5-9B-GGUF",
+      "hf_file": "Qwen3.5-9B-UD-Q4_K_XL.gguf",
+      "notes": "9B, ~84 tok/s"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "write_merge_intervals",
+      "category": "code_write",
+      "prompt": "Escreva a funcao `merge_intervals(intervals)`: recebe uma lista de tuplas (start, end) e devolve a lista de intervalos sobrepostos mesclados, ordenada por inicio. Responda apenas com a funcao em um unico bloco ```python.",
+      "check": {
+        "type": "python_tests",
+        "tests": "assert merge_intervals([(1,3),(2,6),(8,10),(15,18)])==[(1,6),(8,10),(15,18)]\nassert merge_intervals([])==[]\nassert merge_intervals([(1,4),(0,2)])==[(0,4)]\nassert merge_intervals([(1,2),(3,4)])==[(1,2),(3,4)]\nassert merge_intervals([(1,10),(2,3)])==[(1,10)]\nassert merge_intervals([(5,6),(1,2),(2,3)])==[(1,3),(5,6)]\n"
+      }
+    },
+    {
+      "id": "write_word_freq",
+      "category": "code_write",
+      "prompt": "Escreva `word_freq(text, k)`: conta palavras (separadas por espaco, minusculas, ignorando pontuacao simples no fim) e devolve uma lista de tuplas (palavra, contagem) com as k mais frequentes. Empate: ordem alfabetica. Responda apenas com a funcao em um bloco ```python.",
+      "check": {
+        "type": "python_tests",
+        "tests": "assert word_freq('a b a c', 2)==[('a',2),('b',1)]\nassert word_freq('oi oi oi', 1)==[('oi',3)]\nassert word_freq('x y z', 5)==[('x',1),('y',1),('z',1)]\nassert word_freq('', 3)==[]\nassert word_freq('A, a. a', 1)==[('a',3)]\n"
+      }
+    },
+    {
+      "id": "fix_parse_duration",
+      "category": "code_fix",
+      "prompt": "Complete a funcao abaixo sem mudar o nome nem a assinatura. Responda so com a funcao completa em um bloco ```python.\n\n```python\ndef parse_duration(s):\n    \"\"\"Converte '1h30m', '45s', '2h', '1h2m3s' em segundos (int).\n    Levanta ValueError se o texto for invalido.\"\"\"\n    ...\n```",
+      "check": {
+        "type": "python_tests",
+        "tests": "assert parse_duration('1h30m')==5400\nassert parse_duration('45s')==45\nassert parse_duration('2h')==7200\nassert parse_duration('1h2m3s')==3723\nfor bad in ['abc','','10x','h']:\n    try:\n        parse_duration(bad)\n    except ValueError:\n        pass\n    else:\n        raise SystemExit('nao levantou ValueError para %r' % bad)\n"
+      }
+    },
+    {
+      "id": "fix_chunk",
+      "category": "code_fix",
+      "prompt": "Esta funcao tem um bug (`chunk([1,2,3,4,5], 2)` deveria dar `[[1,2],[3,4],[5]]`). Responda com a funcao corrigida completa em um unico bloco ```python, sem mudar a assinatura.\n\n```python\ndef chunk(items, size):\n    \"\"\"Divide a lista em pedacos de tamanho `size`; o ultimo pode ser menor.\"\"\"\n    out = []\n    for i in range(0, len(items) - size, size):\n        out.append(items[i:i + size])\n    return out\n```",
+      "check": {
+        "type": "python_tests",
+        "tests": "assert chunk([1,2,3,4,5],2)==[[1,2],[3,4],[5]]\nassert chunk([],3)==[]\nassert chunk([1,2,3,4],2)==[[1,2],[3,4]]\nassert chunk([1],5)==[[1]]\n"
+      }
+    },
+    {
+      "id": "review_order_bugs",
+      "category": "code_review",
+      "prompt": "Revise este codigo e liste TODOS os defeitos. Responda com JSON puro (sem texto antes ou depois) no formato {\"issues\":[{\"line\": <int>, \"problem\": \"<descricao>\"}]}.\n\n```python\ndef process_orders(orders):\n    total = 0.0\n    ids = []\n    for i in range(len(orders) + 1):\n        order = orders[i]\n        if order[\"status\"] == \"paid\":\n            total += order[\"amount\"]\n        ids.append(order[\"id\"])\n    return total / len(orders), ids\n```",
+      "check": {
+        "type": "json_groups",
+        "groups": [
+          [
+            "indexerror",
+            "index out",
+            "off-by-one",
+            "fora do intervalo",
+            "fora dos limites",
+            "range(len(orders) + 1)",
+            "ultrapassa",
+            "out of range",
+            "fora de alcance",
+            "idx",
+            "posicao inexistente"
+          ],
+          [
+            "zerodivision",
+            "zero division",
+            "divisao por zero",
+            "divisão por zero",
+            "lista vazia",
+            "empty list",
+            "len(orders) == 0",
+            "divisao por zero",
+            "divisão por zero",
+            "div by zero",
+            "empty",
+            "vazio"
+          ],
+          [
+            "keyerror",
+            "amount",
+            "chave ausente",
+            "missing key",
+            "sem a chave",
+            "chave inexistente",
+            "amount inexistente",
+            "nao existe a chave"
+          ],
+          [
+            "float",
+            "decimal",
+            "precisao",
+            "precisão",
+            "round(",
+            "monet",
+            "flutuante",
+            "ponto flutuante",
+            "arredond",
+            "banker",
+            "money"
+          ]
+        ]
+      },
+      "max_tokens": 4000
+    },
+    {
+      "id": "review_injection",
+      "category": "code_review",
+      "prompt": "Revise este endpoint e liste TODOS os problemas de seguranca/qualidade. Responda com JSON puro no formato {\"issues\":[{\"line\": <int>, \"problem\": \"<descricao>\"}]}.\n\n```python\nimport sqlite3\nfrom fastapi import FastAPI\n\napp = FastAPI()\nSECRET = \"sk-live-9f8a7b6c5d4e3f2a1b0c\"\n\n@app.get(\"/user\")\ndef get_user(name: str):\n    conn = sqlite3.connect(\"app.db\")\n    cur = conn.cursor()\n    cur.execute(\"SELECT * FROM users WHERE name = '%s'\" % name)\n    return cur.fetchone()\n```",
+      "check": {
+        "type": "json_groups",
+        "groups": [
+          [
+            "sql injection",
+            "injecao",
+            "injeção",
+            "concaten",
+            "interpol",
+            "parametr",
+            "parametriz",
+            "placeholder",
+            "?",
+            "sqli",
+            "injection"
+          ],
+          [
+            "hardcoded",
+            "hard-coded",
+            "segredo",
+            "secret",
+            "credencial",
+            "api key",
+            "variavel de ambiente",
+            "variável de ambiente",
+            "env",
+            "hard coded",
+            "exposto",
+            "no codigo"
+          ],
+          [
+            "sem autenticacao",
+            "sem autenticação",
+            "no auth",
+            "autenticacao",
+            "autenticação",
+            "authorization",
+            "sem auth",
+            "unauthenticated",
+            "qualquer um"
+          ],
+          [
+            "fechar conexao",
+            "fechar conexão",
+            "close",
+            "context manager",
+            "with ",
+            "vazamento de conex",
+            "leak",
+            "conexao aberta",
+            "nao fecha",
+            "connection leak"
+          ]
+        ]
+      },
+      "max_tokens": 4000
+    },
+    {
+      "id": "refactor_slugify",
+      "category": "refactor",
+      "prompt": "Refatore: mova a logica duplicada para `common.py` com a funcao `slugify(txt)`, e reescreva a.py e b.py para usa-la, mantendo o comportamento publico identico. Responda com 3 blocos ```python, cada um comecando com a linha `# file: nome.py` (common.py, a.py, b.py), com a linha `# file:` DENTRO do bloco.\n\nOriginais:\n\n```python\n# file: a.py\ndef titulo_a(txt):\n    s = txt.strip().lower()\n    s = \"\".join(c if c.isalnum() else \"-\" for c in s)\n    while \"--\" in s:\n        s = s.replace(\"--\", \"-\")\n    return s.strip(\"-\")\n```\n\n```python\n# file: b.py\ndef titulo_b(txt, prefixo=\"post\"):\n    s = txt.strip().lower()\n    s = \"\".join(c if c.isalnum() else \"-\" for c in s)\n    while \"--\" in s:\n        s = s.replace(\"--\", \"-\")\n    return prefixo + \"/\" + s.strip(\"-\")\n```",
+      "check": {
+        "type": "python_files",
+        "inputs": [
+          "  Ola, Mundo!! ",
+          "Ja--Foi  assim",
+          "---x---",
+          "",
+          "A_B c"
+        ],
+        "probe": "import json\nfrom a import titulo_a\nfrom b import titulo_b\nins = inputs\nprint(json.dumps([[titulo_a(s), titulo_b(s), titulo_b(s, 'x')] for s in ins]))\n"
+      }
+    },
+    {
+      "id": "explain_btree",
+      "category": "explain",
+      "prompt": "Explique em no maximo 3 frases por que bancos relacionais usam B-tree para indices em vez de hash tables quando ha consultas por faixa (range queries).",
+      "check": {
+        "type": "contains_groups",
+        "groups": [
+          [
+            "ordem",
+            "ordenad",
+            "sorted",
+            "order",
+            "sequencial"
+          ],
+          [
+            "faixa",
+            "range",
+            "intervalo",
+            "between",
+            ">",
+            "<"
+          ],
+          [
+            "hash",
+            "dispers"
+          ]
+        ],
+        "max_words": 120
+      }
+    },
+    {
+      "id": "longctx_needle",
+      "category": "long_context",
+      "prompt_kind": "longctx",
+      "check": {
+        "type": "contains_all"
+      },
+      "max_tokens": 400
+    },
+    {
+      "id": "tool_calling",
+      "category": "tool_call",
+      "prompt_kind": "tools",
+      "check": {
+        "type": "tool_cases"
+      }
+    }
+  ]
+}

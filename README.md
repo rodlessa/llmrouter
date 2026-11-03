@@ -142,6 +142,41 @@ Suíte de testes (`tests/run.sh`): **33 asserts, 0 falhas**, rodando em
 instalação idempotente, roteamento, rodapé em stream/non-stream, gzip do
 upstream, ordem do SSE, fallback e fast-fail sem systemd.
 
+### Bench por categoria (suite agnostica)
+
+`bench/run_suite.py` + `bench/suite.json` — 7 categorias, 2 runs, ctx 32768,
+gpt-oss-20b / gemma-4-12b / qwen3.5-9b. Score = tarefas aprovadas; tempo = mediana.
+
+| categoria | gpt-oss-20b | gemma-4-12b | qwen3.5-9b | o que mede |
+|---|---|---|---|---|
+| code_write | **100%** (4 s) | 75% (37 s) | 50% (30 s) | escrever funcao a partir da spec |
+| code_fix | **75%** (8 s) | 50% (31 s) | 50% (21 s) | corrigir bug com testes |
+| code_review | **50%** (13 s) | 0% (29 s) | 0% (49 s) | achar os defeitos plantados |
+| refactor | 100% (7 s) | 100% (17 s) | 100% (30 s) | mover logica sem mudar comportamento |
+| explain | 100% (**1 s**) | 100% (13 s) | 100% (17 s) | resposta curta e correta |
+| long_context | 100% (1 s) | 50% (8 s) | 100% (5 s) | agulha no palheiro em ~9k tok |
+| tool_call | 100% (5 s) | 50% (25 s) | 100% (15 s) | 8 casos get_weather/run_sql |
+
+Em `code_review` o binario esconde o detalhe: contando os defeitos plantados um a
+um (4 por caso), gpt-oss acha **23/32 (72%)**, gemma **20/32 (62%)**, qwen **0/32**
+(nem devolve JSON, entra em loop de raciocinio).
+
+Conclusao: **um modelo serve para tudo** — gpt-oss-20b. Nao ha ganho em trocar de
+modelo por tarefa; gemma e qwen erram mais e sao 3-4x mais lentos. Trocar de
+modelo exigiria parar/religar o llama-server (4-10 s) para piorar a resposta.
+
+### Janela de contexto (gpt-oss-20b, 16 GiB)
+
+| ctx | VRAM | agulha em 13.4k tok | geracao |
+|---|---|---|---|
+| 32768 | 12.91 GiB | ok | 160 tok/s |
+| **65536** | **13.71 GiB** | ok | **162 tok/s** |
+| 131072 | 14.86 GiB | ok | 131 tok/s |
+
+O KV cache do gpt-oss e barato: dobrar de 32k para 64k custa ~0.8 GiB. O padrao
+do repo passou a ser **65536** (`CTX` no local.env e `LOCAL_CTX` no router.env).
+131072 funciona, mas deixa ~1 GiB livre na GPU — so use com a maquina so para isso.
+
 ## OpenClaw
 
 Provider (merge no `~/.openclaw/openclaw.json`):
