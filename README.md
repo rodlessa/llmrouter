@@ -221,6 +221,20 @@ Ele é injetado no SSE **antes** do `finish_reason`: o router segura o chunk de
 finish, emite um delta com a caixa e só então libera o finish e o usage. No modo
 non-stream, é concatenado ao `content`.
 
+Quando a rota muda em relação ao request anterior da mesma sessão (local -> API
+ou API -> local), a caixa ganha uma linha extra avisando:
+
+```
++------------------------------------+
+| ROTA: API (deepseek-v4-flash)      |
+| 271 prompt tok | 65 gerados | 1.7s |
+| mudou: LOCAL -> API                |
++------------------------------------+
+```
+
+O aviso é por sessão quando o cliente manda um header de sessão
+(`x-session-id`, `x-openclaw-session`); sem header, vale para o processo.
+
 ## Laya (opcional)
 
 [`convaiinnovations/laya`](https://huggingface.co/convaiinnovations/laya) é um

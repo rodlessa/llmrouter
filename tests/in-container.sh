@@ -117,6 +117,11 @@ grep -qi "x-route-reason: fallback" /tmp/fh && ok "motivo do fallback no header"
 echo "== log do router"
 grep -E "\[router\]" /tmp/router.log | tail -12
 
+echo "== aviso de mudanca de rota"
+post "{\"model\":\"local\",\"messages\":[{\"role\":\"user\",\"content\":\"oi\"}],\"tools\":$TOOLS}" > /dev/null
+CH=$(post "{\"model\":\"api\",\"messages\":[{\"role\":\"user\",\"content\":\"oi\"}],\"tools\":$TOOLS}")
+echo "$CH" | grep -q "mudou: LOCAL -> API" && ok "rodape avisa mudanca de rota" || { no "sem aviso de mudanca de rota"; echo "    ${CH: -240}"; }
+
 echo "== sem systemd e sem modelo local (fast-fail)"
 kill $MOCKLLAMA 2>/dev/null; sleep 1
 T0=$(date +%s%N)

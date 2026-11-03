@@ -99,7 +99,20 @@ ROCM_SMI = shutil.which("rocm-smi")
 SYSTEMCTL = shutil.which("systemctl")
 LOCAL_HEALTH_URL = LOCAL_BASE_URL.rsplit("/v1", 1)[0] + "/health"
 
-STATE = {"active": 0, "last": time.time()}
+STATE = {"active": 0, "last": time.time(), "rotas": {}}
+
+# Headers que alguns clientes usam para identificar a sessao. Sem nenhum deles,
+# o aviso de mudanca de rota vale para o processo inteiro.
+SID_HEADERS = ("x-session-id", "x-openclaw-session", "x-openclaw-session-key",
+               "x-request-session", "x-conversation-id")
+
+
+def session_key(request):
+    for h in SID_HEADERS:
+        v = request.headers.get(h)
+        if v:
+            return v
+    return "global"
 
 
 def sh(cmd, timeout=30):
@@ -307,7 +320,7 @@ def log_decision(rec):
         print(f"[router] nao consegui gravar {LAYA_LOG}: {e}", flush=True)
 
 
-def footer_box(target, usage, timings, elapsed):
+def footer_box(target, usage, timings, elapsed, mudou=None):
     """Caixa ASCII dizendo onde a resposta rodou. Sem emoji."""
     if target == "local":
         titulo = "ROTA: LOCAL (llama.cpp)"
@@ -328,6 +341,8 @@ def footer_box(target, usage, timings, elapsed):
         detalhes.append(f"{tps:.0f} tok/s")
     detalhes.append(f"{elapsed:.1f}s")
     linhas = [titulo, " | ".join(detalhes)]
+    if mudou:
+        linhas.append(f"mudou: {mudou}")
     larg = max(len(x) for x in linhas)
     borda = "+" + "-" * (larg + 2) + "+"
     corpo = "\n".join(f"| {x.ljust(larg)} |" for x in linhas)
@@ -455,6 +470,9 @@ async def chat(request: Request):
               f"est_tok={estimate_tokens(body)} "
               f"tools={sorted(t for t in tool_names(body) if t)}", flush=True)
 
+    add_footer = FOOTER_ENABLED and (
+        not FOOTER_REQUIRE_TOOLS or bool(tool_names(body)))
+
     if target == "local":
         ok, why = await ensure_local_ready()
         if not ok:
@@ -499,12 +517,21 @@ async def chat(request: Request):
                   "last_user": _last_user(body)[:500],
                   "hard": hard, "laya": laya, "final": target, "motivo": reason})
 
-    add_footer = FOOTER_ENABLED and (
-        not FOOTER_REQUIRE_TOOLS or bool(tool_names(body)))
     out_headers = {"X-Routed-To": target, "X-Route-Reason": reason}
 
+    # Avisa no rodape quando a rota muda em relacao ao request anterior.
+    mudou = None
+    if add_footer:
+        sid = session_key(request)
+        anterior = STATE["rotas"].get(sid)
+        if anterior and anterior != target:
+            mudou = f"{anterior.upper()} -> {target.upper()}"
+            print(f"[router] rota mudou ({sid}): {anterior} -> {target}",
+                  flush=True)
+        STATE["rotas"][sid] = target
+
     def inject_footer(usage, timings):
-        return footer_box(target, usage, timings, time.time() - started)
+        return footer_box(target, usage, timings, time.time() - started, mudou)
 
     if not body.get("stream"):
         raw = await resp.aread()
@@ -521,7 +548,8 @@ async def chat(request: Request):
                 if msg.get("content"):
                     msg["content"] += footer_box(
                         target, data.get("usage") or {},
-                        data.get("timings") or {}, time.time() - started)
+                        data.get("timings") or {}, time.time() - started,
+                        mudou)
             except Exception:
                 pass
         return JSONResponse(content=data, headers=out_headers)
@@ -557,6 +585,7 @@ async def local_status():
         "laya": {"modo": LAYA_MODE, "carregado": _laya is not None,
                  "decide_p": LAYA_DECIDE_P},
         "rodape": FOOTER_ENABLED,
+        "rotas_sessao": STATE["rotas"],
     }
 
 
