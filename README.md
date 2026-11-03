@@ -112,6 +112,36 @@ Se o `llama-server` estiver em outro caminho, ajuste `LLAMA_SERVER` no `local.en
 MoE). Alternativa que ocupa metade da VRAM: `gemma-4-12b-it-UD-Q4_K_XL.gguf`
 (6.9 GiB, ~62 tok/s).
 
+## Resultados medidos
+
+Bench de qualidade (`bench/quality_bench.py`), 3 runs por tarefa, temp 0.2,
+commit `8268bf3a5678` — 18 tarefas de código/reasoning + 20 de tool calling:
+Ryzen 9 9950X, RX 9070 XT 16 GiB (Vulkan), 2026-11-02.
+
+| modelo | VRAM | tok/s | tarefas (18) | tool calling (20) | pior tarefa |
+|---|---:|---:|---:|---:|---:|
+| **gpt-oss-20b Q4XL** | 11.06 GiB | **182** | **18/18** | 19/20 | 13.1 s |
+| gemma-4-12b Q4XL | 6.86 GiB | 62 | 15/18 | 20/20 | 132 s |
+| qwen3.5-9b Q4XL | 5.55 GiB | 84 | 13/18 | 20/20 | 97 s |
+
+- **gpt-oss-20b**: único que acerta edição cirúrgica (3/3); o único erro é 1 tool
+  call respondida em texto. É o modelo recomendado.
+- **gemma-4-12b**: perfeito em tools e metade da VRAM, mas falha edição cirúrgica
+  (0/3) e é 3x mais lento.
+- **qwen3.5-9b**: entra em loop de raciocínio (8000 tokens, conteúdo vazio) em
+  edição cirúrgica e escrita de teste — descartado.
+- O tok/s cai muito quando outro processo ocupa a VRAM (jogo): o llama.cpp manda
+  as camadas que não couberem para CPU+RAM.
+
+Números do router em uso (este repo): prompt de agente ≈ **15k tokens**,
+prefill ≈ **5.1k tok/s**, geração **159–180 tok/s**, primeira resposta local em
+**~6 s**; cold start do modelo **~4 s**.
+
+Suíte de testes (`tests/run.sh`): **33 asserts, 0 falhas**, rodando em
+`debian:bookworm-slim` limpo via podman rootless — inclui clone sem segredos,
+instalação idempotente, roteamento, rodapé em stream/non-stream, gzip do
+upstream, ordem do SSE, fallback e fast-fail sem systemd.
+
 ## OpenClaw
 
 Provider (merge no `~/.openclaw/openclaw.json`):
