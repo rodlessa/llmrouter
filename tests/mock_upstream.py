@@ -45,7 +45,7 @@ class Api(Base):
                     "created": 1, "model": "mock-api"}
             self.wfile.write(sse({**base, "choices": [
                 {"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]}))
-            for piece in ("resposta ", "da ", "api"):
+            for piece in ("resposta ", "da ", "api (%s)" % body.get("model")):
                 self.wfile.write(sse({**base, "choices": [
                     {"index": 0, "delta": {"content": piece}, "finish_reason": None}]}))
             self.wfile.write(sse({**base, "choices": [
@@ -57,7 +57,8 @@ class Api(Base):
         data = {"id": "chatcmpl-mock", "object": "chat.completion", "created": 1,
                 "model": "mock-api",
                 "choices": [{"index": 0, "finish_reason": "stop",
-                             "message": {"role": "assistant", "content": "resposta da api"}}],
+                             "message": {"role": "assistant",
+                                         "content": "resposta da api (%s)" % body.get("model")}}],
                 "usage": {"prompt_tokens": 100, "completion_tokens": 7, "total_tokens": 107}}
         gz = "gzip" in (self.headers.get("accept-encoding") or "")
         self._send(200, json.dumps(data).encode(), gz=gz)

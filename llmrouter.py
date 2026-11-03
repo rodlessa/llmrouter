@@ -51,7 +51,9 @@ LOCAL_CTX_USABLE = 0.6  # acima disso de contexto, manda para a API
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://openrouter.ai/api/v1")
 API_KEY = os.getenv("API_KEY", "")
-API_MODEL = os.getenv("API_MODEL", "anthropic/claude-sonnet-4.6")
+API_MODEL = os.getenv("API_MODEL", "deepseek-v4-flash")
+# Modelo de "pensamento" (planejamento, arquitetura, review). Vazio = usa so API_MODEL.
+API_MODEL_THINK = os.getenv("API_MODEL_THINK", "")
 
 # Tools simples e seguras que o modelo local pode tentar (vazio = nenhuma)
 LOCAL_TOOL_ALLOWLIST = {
@@ -75,6 +77,16 @@ LAYA_LOG = os.path.expanduser(
 # ------------------------------- rodape -------------------------------------
 FOOTER_ENABLED = os.getenv("FOOTER", "1").lower() not in ("0", "false", "no")
 FOOTER_REQUIRE_TOOLS = os.getenv("FOOTER_REQUIRE_TOOLS", "1") != "0"
+
+# Sinais de tarefa de pensamento: vale pagar o modelo mais caro.
+THINK_PATTERNS = re.compile(
+    r"(planej|plane?jamento|arquitet|architect|\bdesign\b|estrat[eé]g|strateg|"
+    r"trade-?off|roadmap|decis[ãa]o|decidir|avalie|avaliar|compar[ae]|"
+    r"analis[ae]|an[áa]lise|\breview\b|revis[ãa]o|critique|abordagem|approach|"
+    r"boas pr[áa]ticas|best practice|estrutur|organiz[ae]|refator|refactor|"
+    r"como voc[êe] (faria|implementaria|estruturaria)|proposta)",
+    re.IGNORECASE,
+)
 
 HEAVY_PATTERNS = re.compile(
     r"(pesquis[ae]|busca(r)? na (web|internet)|web ?search|google|"
@@ -320,7 +332,7 @@ def log_decision(rec):
         print(f"[router] nao consegui gravar {LAYA_LOG}: {e}", flush=True)
 
 
-def footer_box(target, usage, timings, elapsed, mudou=None):
+def footer_box(target, usage, timings, elapsed, mudou=None, api_model=None):
     """Caixa ASCII dizendo onde a resposta rodou. Sem emoji."""
     if target == "local":
         titulo = "ROTA: LOCAL (llama.cpp)"
@@ -328,7 +340,7 @@ def footer_box(target, usage, timings, elapsed, mudou=None):
         ptok = usage.get("prompt_tokens") or timings.get("prompt_n")
         tps = timings.get("predicted_per_second")
     else:
-        titulo = f"ROTA: API ({API_MODEL})"
+        titulo = f"ROTA: API ({api_model or API_MODEL})"
         tok = usage.get("completion_tokens")
         ptok = usage.get("prompt_tokens")
         tps = None
@@ -421,15 +433,27 @@ def tipo_erro(e):
     return type(e).__name__
 
 
-def upstream(target: str) -> tuple[str, dict, str]:
+def api_model_for(body: dict):
+    """Escolhe o modelo da API: pro para pensar, flash para executar."""
+    if not API_MODEL_THINK or API_MODEL_THINK == API_MODEL:
+        return API_MODEL, ""
+    msgs = body.get("messages", [])
+    if any(m.get("role") == "tool" or m.get("tool_calls") for m in msgs):
+        return API_MODEL, "exec (loop de tools)"
+    if THINK_PATTERNS.search(_last_user(body)):
+        return API_MODEL_THINK, "pensamento"
+    return API_MODEL, "execucao"
+
+
+def upstream(target: str, api_model=None) -> tuple[str, dict, str]:
     if target == "local":
         return LOCAL_BASE_URL, {}, LOCAL_MODEL
-    return API_BASE_URL, {"Authorization": f"Bearer {API_KEY}"}, API_MODEL
+    return API_BASE_URL, {"Authorization": f"Bearer {API_KEY}"}, (api_model or API_MODEL)
 
 
-async def forward(body: dict, target: str):
-    """Abre a conexão e devolve (response_httpx, stream_bool)."""
-    base, headers, model = upstream(target)
+async def forward(body: dict, target: str, api_model=None):
+    """Abre a conexão e devolve a response em streaming do httpx."""
+    base, headers, model = upstream(target, api_model)
     payload = {**body, "model": model}
     req = client.build_request(
         "POST", f"{base}/chat/completions", json=payload, headers=headers
@@ -470,6 +494,7 @@ async def chat(request: Request):
               f"est_tok={estimate_tokens(body)} "
               f"tools={sorted(t for t in tool_names(body) if t)}", flush=True)
 
+    api_model, api_porque = api_model_for(body)
     add_footer = FOOTER_ENABLED and (
         not FOOTER_REQUIRE_TOOLS or bool(tool_names(body)))
 
@@ -491,7 +516,7 @@ async def chat(request: Request):
 
     fallback = False
     try:
-        resp = await forward(body, target)
+        resp = await forward(body, target, api_model)
         if target == "local" and resp.status_code >= 500:
             await resp.aclose()
             raise httpx.HTTPError("local 5xx")
@@ -503,12 +528,14 @@ async def chat(request: Request):
         # Local caiu/timeout: escala para a API
         target, reason, fallback = "api", "fallback: local falhou", True
         try:
-            resp = await forward(body, target)
+            resp = await forward(body, target, api_model)
         except httpx.HTTPError as e:
             done()
             return JSONResponse(
                 {"error": "API upstream indisponivel", "detail": tipo_erro(e)}, 502)
 
+    if target == "api" and api_porque:
+        reason = f"{reason}; {api_model} ({api_porque})"
     print(f"[router] -> {target} ({reason}){' [FALLBACK]' if fallback else ''}",
           flush=True)
     log_decision({"ts": round(time.time(), 3), "est_tok": estimate_tokens(body),
@@ -531,7 +558,8 @@ async def chat(request: Request):
         STATE["rotas"][sid] = target
 
     def inject_footer(usage, timings):
-        return footer_box(target, usage, timings, time.time() - started, mudou)
+        return footer_box(target, usage, timings, time.time() - started, mudou,
+                          api_model if target == "api" else None)
 
     if not body.get("stream"):
         raw = await resp.aread()
@@ -549,7 +577,7 @@ async def chat(request: Request):
                     msg["content"] += footer_box(
                         target, data.get("usage") or {},
                         data.get("timings") or {}, time.time() - started,
-                        mudou)
+                        mudou, api_model if target == "api" else None)
             except Exception:
                 pass
         return JSONResponse(content=data, headers=out_headers)
@@ -582,6 +610,7 @@ async def local_status():
         "autostart": LOCAL_AUTOSTART,
         "idle_stop_s": LOCAL_IDLE_STOP,
         "vram_livre_mib": await asyncio.to_thread(vram_free_mib),
+        "api": {"exec": API_MODEL, "think": API_MODEL_THINK or None},
         "laya": {"modo": LAYA_MODE, "carregado": _laya is not None,
                  "decide_p": LAYA_DECIDE_P},
         "rodape": FOOTER_ENABLED,
@@ -594,7 +623,8 @@ async def route_explain(request: Request):
     """Mostra a decisao sem encaminhar nada (util para calibrar)."""
     body = await request.json()
     target, reason, hard = decide(body)
-    out = {"heuristica": {"destino": target, "motivo": reason, "hard": hard}}
+    out = {"heuristica": {"destino": target, "motivo": reason, "hard": hard},
+           "api_model": dict(zip(("modelo", "porque"), api_model_for(body)))}
     if LAYA_MODE != "off":
         try:
             out["laya"] = await laya_route(body)

@@ -43,7 +43,8 @@ echo "== configuracao de teste"
 cat > router.env <<'ENV'
 API_BASE_URL=http://127.0.0.1:9100
 API_KEY=mock-key-123
-API_MODEL=mock-api
+API_MODEL=mock-fast
+API_MODEL_THINK=mock-pro
 LOCAL_BASE_URL=http://127.0.0.1:9200/v1
 LOCAL_MODEL=local
 LOCAL_CTX=32768
@@ -121,6 +122,14 @@ echo "== aviso de mudanca de rota"
 post "{\"model\":\"local\",\"messages\":[{\"role\":\"user\",\"content\":\"oi\"}],\"tools\":$TOOLS}" > /dev/null
 CH=$(post "{\"model\":\"api\",\"messages\":[{\"role\":\"user\",\"content\":\"oi\"}],\"tools\":$TOOLS}")
 echo "$CH" | grep -q "mudou: LOCAL -> API" && ok "rodape avisa mudanca de rota" || { no "sem aviso de mudanca de rota"; echo "    ${CH: -240}"; }
+
+echo "== pro no pensamento, flash na execucao"
+P=$(post "{\"model\":\"api\",\"messages\":[{\"role\":\"user\",\"content\":\"Planeje a arquitetura de um servico de pagamentos e explique os trade-offs.\"}],\"tools\":$TOOLS}")
+echo "$P" | grep -q "ROTA: API (mock-pro)" && ok "planejamento/arquitetura -> pro" || { no "planejamento nao foi para o pro"; echo "    ${P: -170}"; }
+X=$(post "{\"model\":\"api\",\"messages\":[{\"role\":\"user\",\"content\":\"Diga oi\"}],\"tools\":$TOOLS}")
+echo "$X" | grep -q "ROTA: API (mock-fast)" && ok "execucao simples -> flash" || { no "execucao nao foi para o flash"; echo "    ${X: -170}"; }
+L=$(post "{\"model\":\"api\",\"messages\":[{\"role\":\"user\",\"content\":\"Planeje a arquitetura\"},{\"role\":\"tool\",\"content\":\"ok\"}],\"tools\":$TOOLS}")
+echo "$L" | grep -q "ROTA: API (mock-fast)" && ok "loop de tools -> flash" || { no "loop nao caiu no flash"; echo "    ${L: -170}"; }
 
 echo "== sem systemd e sem modelo local (fast-fail)"
 kill $MOCKLLAMA 2>/dev/null; sleep 1
